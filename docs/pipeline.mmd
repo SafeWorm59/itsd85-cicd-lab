@@ -1,0 +1,30 @@
+flowchart TD
+    subgraph Local["1. Local Development (Current Stage)"]
+        DEV["Developer Workspace\n(Node.js 24 + Express)"] --> LINT["Local Linting\n(npm run lint)"]
+        DEV --> TEST["Local Automated Tests\n(npm test)"]
+        DEV --> DOCKER_BUILD["Local Docker Build & Compose\n(compose.yaml / Dockerfile)"]
+    end
+
+    subgraph GitHub["2. GitHub CI Workflow (Configured)"]
+        PUSH["Git Push / PR to main\nor manual dispatch"] --> GH_ACTIONS["GitHub Actions Runner\n(ubuntu-latest)"]
+        GH_ACTIONS --> CI_CHECKOUT["actions/checkout@v7"]
+        CI_CHECKOUT --> CI_SETUP["actions/setup-node@v7\n(Node 24 + npm cache)"]
+        CI_SETUP --> CI_INSTALL["npm ci"]
+        CI_INSTALL --> CI_LINT["npm run lint"]
+        CI_LINT --> CI_TEST["npm test"]
+    end
+
+    subgraph FutureDeployment["3. Deployment Pipeline (Pending VM & Runner Configuration)"]
+        CI_TEST -.->|"Trigger on Success (Future Stage)"| CD_JOB["CD Deployment Job"]
+        CD_JOB -.->|"Deploy via Self-Hosted Runner"| PROD_SERVER["Ubuntu Deployment Server"]
+        PROD_SERVER -.->|"docker compose up -d"| PROD_CONTAINER["itsd85-app Container\n(Port 8080 -> 3000)"]
+        PROD_CONTAINER -.->|"Health Check"| HEALTHCHECK["/health Endpoint Monitoring"]
+    end
+
+    Local -->|"git push (Pending Manual Approval)"| PUSH
+
+    classDef active fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
+    classDef pending fill:#fff3e0,stroke:#f57c00,stroke-width:2px,stroke-dasharray: 5 5;
+    class DEV,LINT,TEST,DOCKER_BUILD,PUSH,GH_ACTIONS,CI_CHECKOUT,CI_SETUP,CI_INSTALL,CI_LINT,CI_TEST active;
+    class CD_JOB,PROD_SERVER,PROD_CONTAINER,HEALTHCHECK pending;
+
