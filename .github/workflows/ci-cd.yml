@@ -32,3 +32,60 @@ jobs:
       - name: Run automated tests
         run: npm test
 
+  deploy:
+    name: Deploy to Self-Hosted Server
+    needs: test
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, deploy]
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Deploy application with Docker Compose
+        env:
+          APP_VERSION: ${{ github.sha }}
+        run: |
+          docker compose -p itsd85 up -d --build --remove-orphans
+
+      - name: Verify deployment health and version
+        run: |
+          echo "Verifying health endpoint at http://localhost:8080/health..."
+          EXPECTED_SHA="${{ github.sha }}"
+          MAX_ATTEMPTS=15
+          DELAY_SECONDS=2
+          SUCCESS=false
+
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            RESPONSE=$(curl -s -f http://localhost:8080/health || true)
+            echo "Attempt $i/$MAX_ATTEMPTS: received response '$RESPONSE'"
+            if [ -n "$RESPONSE" ]; then
+              STATUS_OK=$(echo "$RESPONSE" | grep -o '"status":"ok"' || true)
+              VERSION_MATCH=$(echo "$RESPONSE" | grep -o "$EXPECTED_SHA" || true)
+              if [ -n "$STATUS_OK" ] && [ -n "$VERSION_MATCH" ]; then
+                echo "Health check succeeded: service is healthy and running commit $EXPECTED_SHA"
+                SUCCESS=true
+                break
+              fi
+            fi
+            if [ "$i" -lt "$MAX_ATTEMPTS" ]; then
+              sleep $DELAY_SECONDS
+            fi
+          done
+
+          if [ "$SUCCESS" != "true" ]; then
+            echo "ERROR: Health check failed or reported version did not match $EXPECTED_SHA after $MAX_ATTEMPTS attempts."
+            echo "=== Docker Compose Container Logs ==="
+            docker compose -p itsd85 logs --tail=100 web
+            exit 1
+          fi
+
+      - name: Prune dangling Docker images safely
+        if: always()
+        run: |
+          docker image prune -f
+

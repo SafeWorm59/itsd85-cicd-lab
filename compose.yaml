@@ -1,3 +1,5 @@
+name: itsd85
+
 services:
   web:
     build:
@@ -11,6 +13,7 @@ services:
     restart: unless-stopped
     environment:
       - PORT=3000
+      - APP_VERSION=${APP_VERSION:-local}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health > /dev/null || exit 1"]
       interval: 30s

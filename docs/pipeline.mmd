@@ -1,30 +1,27 @@
 flowchart TD
-    subgraph Local["1. Local Development (Current Stage)"]
-        DEV["Developer Workspace\n(Node.js 24 + Express)"] --> LINT["Local Linting\n(npm run lint)"]
-        DEV --> TEST["Local Automated Tests\n(npm test)"]
-        DEV --> DOCKER_BUILD["Local Docker Build & Compose\n(compose.yaml / Dockerfile)"]
+    subgraph Local["1. Local Development"]
+        DEV["Developer Workspace\n(Node.js 24 + Express)"] --> LINT["npm run lint"]
+        DEV --> TEST["npm test"]
+        DEV --> DOCKER_BUILD["docker compose -p itsd85 up -d --build"]
     end
 
-    subgraph GitHub["2. GitHub CI Workflow (Configured)"]
-        PUSH["Git Push / PR to main\nor manual dispatch"] --> GH_ACTIONS["GitHub Actions Runner\n(ubuntu-latest)"]
-        GH_ACTIONS --> CI_CHECKOUT["actions/checkout@v7"]
-        CI_CHECKOUT --> CI_SETUP["actions/setup-node@v7\n(Node 24 + npm cache)"]
-        CI_SETUP --> CI_INSTALL["npm ci"]
-        CI_INSTALL --> CI_LINT["npm run lint"]
+    subgraph GitHub["2. GitHub CI Workflow (Active)"]
+        PUSH["Push to main"] --> GH_ACTIONS["GitHub Actions Runner\n(ubuntu-latest)"]
+        GH_ACTIONS --> CI_LINT["npm run lint"]
         CI_LINT --> CI_TEST["npm test"]
     end
 
-    subgraph FutureDeployment["3. Deployment Pipeline (Pending VM & Runner Configuration)"]
-        CI_TEST -.->|"Trigger on Success (Future Stage)"| CD_JOB["CD Deployment Job"]
-        CD_JOB -.->|"Deploy via Self-Hosted Runner"| PROD_SERVER["Ubuntu Deployment Server"]
-        PROD_SERVER -.->|"docker compose up -d"| PROD_CONTAINER["itsd85-app Container\n(Port 8080 -> 3000)"]
-        PROD_CONTAINER -.->|"Health Check"| HEALTHCHECK["/health Endpoint Monitoring"]
+    subgraph Server["3. Production Deployment (Self-Hosted Runner)"]
+        CI_TEST -->|"needs: test (push to main only)"| CD_JOB["deploy Job\n(runs-on: [self-hosted, linux, deploy])"]
+        CD_JOB -->|"docker compose -p itsd85 up -d --build"| COMPOSE["Docker Compose Project: itsd85"]
+        COMPOSE --> CONTAINER["itsd85-app Container\n(Host 8080 -> Container 3000)"]
+        CONTAINER --> HEALTH["Healthcheck Loop\n(15 attempts x 2s against /health)"]
+        HEALTH --> PRUNE["Safe Cleanup\n(docker image prune -f)"]
     end
 
-    Local -->|"git push (Pending Manual Approval)"| PUSH
+    Local -->|"git push origin main"| PUSH
 
     classDef active fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef pending fill:#fff3e0,stroke:#f57c00,stroke-width:2px,stroke-dasharray: 5 5;
-    class DEV,LINT,TEST,DOCKER_BUILD,PUSH,GH_ACTIONS,CI_CHECKOUT,CI_SETUP,CI_INSTALL,CI_LINT,CI_TEST active;
-    class CD_JOB,PROD_SERVER,PROD_CONTAINER,HEALTHCHECK pending;
-
+    classDef runner fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+    class DEV,LINT,TEST,DOCKER_BUILD,PUSH,GH_ACTIONS,CI_LINT,CI_TEST active;
+    class CD_JOB,COMPOSE,CONTAINER,HEALTH,PRUNE runner;

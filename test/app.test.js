@@ -43,18 +43,21 @@ describe('Integration Tests: Express API', () => {
     });
   });
 
-  it('GET / returns 200 and a welcome message', async () => {
+  it('GET / returns 200, title, and deployed version', async () => {
     const res = await fetch(`${baseUrl}/`);
     assert.strictEqual(res.status, 200);
     const body = await res.json();
+    assert.strictEqual(body.title, 'itsd85-cicd-lab');
     assert.ok(body.message);
+    assert.ok(body.version);
   });
 
-  it('GET /health returns 200 and ok status', async () => {
+  it('GET /health returns 200, status ok, and deployed version', async () => {
     const res = await fetch(`${baseUrl}/health`);
     assert.strictEqual(res.status, 200);
     const body = await res.json();
     assert.strictEqual(body.status, 'ok');
+    assert.ok(body.version);
   });
 
   it('GET /api/add returns 200 and { result: 5 } for a=2&b=3', async () => {

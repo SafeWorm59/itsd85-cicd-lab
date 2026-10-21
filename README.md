@@ -29,7 +29,7 @@ The API operates over HTTP and returns all responses in JSON format.
 ### 3.1. Welcome Endpoint
 - **Method:** `GET`
 - **Path:** `/`
-- **Description:** Returns a greeting message confirming the API is reachable.
+- **Description:** Returns the project title, greeting message, and deployed application version.
 - **Sample Request:**
   ```http
   GET / HTTP/1.1
@@ -38,7 +38,9 @@ The API operates over HTTP and returns all responses in JSON format.
 - **Sample Response (HTTP 200 OK):**
   ```json
   {
-    "message": "ITSD 85 CI/CD Lab API"
+    "title": "itsd85-cicd-lab",
+    "message": "ITSD 85 CI/CD Lab API",
+    "version": "1.0.0-local"
   }
   ```
 
@@ -47,7 +49,7 @@ The API operates over HTTP and returns all responses in JSON format.
 ### 3.2. Health Check Endpoint
 - **Method:** `GET`
 - **Path:** `/health`
-- **Description:** Used by container orchestrators, Docker health checks, and uptime monitors.
+- **Description:** Returns `status: "ok"` and the deployed application version. Used by container health checks and deployment verification.
 - **Sample Request:**
   ```http
   GET /health HTTP/1.1
@@ -56,7 +58,8 @@ The API operates over HTTP and returns all responses in JSON format.
 - **Sample Response (HTTP 200 OK):**
   ```json
   {
-    "status": "ok"
+    "status": "ok",
+    "version": "1.0.0-local"
   }
   ```
 
@@ -218,61 +221,65 @@ The test runner will execute:
 
 ---
 
-## 8. GitHub Actions CI Pipeline
+## 8. GitHub Actions CI/CD Pipeline
 
-The project includes an automated GitHub Actions CI workflow in [`.github/workflows/ci-cd.yml`](file:///c:/Users/Admin/itsd85-cicd-lab/.github/workflows/ci-cd.yml).
+The automated workflow is defined in [`.github/workflows/ci-cd.yml`](file:///c:/Users/Admin/itsd85-cicd-lab/.github/workflows/ci-cd.yml) and consists of two coordinated jobs:
 
-### Workflow Triggers
-- Pushes to the `main` branch.
-- Pull requests targeting the `main` branch.
-- Manual execution via `workflow_dispatch`.
+### 8.1. CI Job (`test`)
+- **Triggers:** Pushes to `main`, pull requests targeting `main`, and manual execution via `workflow_dispatch`.
+- **Runner:** `ubuntu-latest`.
+- **Steps:**
+  1. Check out repository (`actions/checkout@v7`).
+  2. Set up Node.js 24 with npm caching (`actions/setup-node@v7`).
+  3. Clean dependency installation (`npm ci`).
+  4. Code quality & lint check (`npm run lint`).
+  5. Automated unit & integration tests (`npm test`).
 
-### CI Job Pipeline (`test`)
-The `test` job executes on an `ubuntu-latest` runner and performs:
-1. Repository checkout (`actions/checkout@v7`).
-2. Node.js 24 environment setup with npm cache (`actions/setup-node@v7`).
-3. Clean dependency installation (`npm ci`).
-4. Static code analysis and linting (`npm run lint`).
-5. Execution of all automated tests (`npm test`).
+### 8.2. CD Deployment Job (`deploy`)
+- **Prerequisite:** `needs: test` (must pass CI).
+- **Execution Condition:** Runs **only on pushes to `main`** (or manual dispatch on `main`); **never** triggers on pull requests.
+- **Runner:** `[self-hosted, linux, deploy]` (targeted to the self-hosted runner on the Ubuntu deployment server).
+- **Concurrency:** `group: production-deployment` (`cancel-in-progress: false`) to prevent overlapping deployments.
+- **Steps:**
+  1. Exact commit checkout (`actions/checkout@v7` with `ref: ${{ github.sha }}`).
+  2. Container deployment using Docker Compose:
+     `docker compose -p itsd85 up -d --build --remove-orphans` with `APP_VERSION=${{ github.sha }}`.
+  3. Health check & version verification against `http://localhost:8080/health` (15 retries, 2s intervals) confirming `status: "ok"` and version matches `${{ github.sha }}`.
+  4. Error handling: dumps container logs (`docker compose -p itsd85 logs --tail=100 web`) if health check fails.
+  5. Safe cleanup: prunes only dangling images (`docker image prune -f`) without deleting active containers or volumes.
 
 ---
 
-## 9. Deployment Architecture and Future Self-Hosted Runner
-
-The architecture separates the automated CI stage from the downstream deployment stage. Currently, the local development and CI stages are implemented. The continuous deployment (CD) job will be added once the Ubuntu deployment VM and self-hosted GitHub Actions runner are configured.
-
-### Pipeline Flow Diagram
+## 9. Deployment Architecture & Self-Hosted Runner
 
 ```mermaid
 flowchart TD
-    subgraph Local["1. Local Development (Current Stage)"]
-        DEV["Developer Workspace\n(Node.js 24 + Express)"] --> LINT["Local Linting\n(npm run lint)"]
-        DEV --> TEST["Local Automated Tests\n(npm test)"]
-        DEV --> DOCKER_BUILD["Local Docker Build & Compose\n(compose.yaml / Dockerfile)"]
+    subgraph Local["1. Local Development"]
+        DEV["Developer Workspace\n(Node.js 24 + Express)"] --> LINT["npm run lint"]
+        DEV --> TEST["npm test"]
+        DEV --> DOCKER_BUILD["docker compose -p itsd85 up -d --build"]
     end
 
-    subgraph GitHub["2. GitHub CI Workflow (Configured)"]
-        PUSH["Git Push / PR to main\nor manual dispatch"] --> GH_ACTIONS["GitHub Actions Runner\n(ubuntu-latest)"]
-        GH_ACTIONS --> CI_CHECKOUT["actions/checkout@v7"]
-        CI_CHECKOUT --> CI_SETUP["actions/setup-node@v7\n(Node 24 + npm cache)"]
-        CI_SETUP --> CI_INSTALL["npm ci"]
-        CI_INSTALL --> CI_LINT["npm run lint"]
+    subgraph GitHub["2. GitHub CI Workflow (Active)"]
+        PUSH["Push to main"] --> GH_ACTIONS["GitHub Actions Runner\n(ubuntu-latest)"]
+        GH_ACTIONS --> CI_LINT["npm run lint"]
         CI_LINT --> CI_TEST["npm test"]
     end
 
-    subgraph FutureDeployment["3. Deployment Pipeline (Pending VM & Runner Configuration)"]
-        CI_TEST -.->|"Trigger on Success (Future Stage)"| CD_JOB["CD Deployment Job"]
-        CD_JOB -.->|"Deploy via Self-Hosted Runner"| PROD_SERVER["Ubuntu Deployment Server"]
-        PROD_SERVER -.->|"docker compose up -d"| PROD_CONTAINER["itsd85-app Container\n(Port 8080 -> 3000)"]
-        PROD_CONTAINER -.->|"Health Check"| HEALTHCHECK["/health Endpoint Monitoring"]
+    subgraph Server["3. Production Deployment (Self-Hosted Runner)"]
+        CI_TEST -->|"needs: test (push to main only)"| CD_JOB["deploy Job\n(runs-on: [self-hosted, linux, deploy])"]
+        CD_JOB -->|"docker compose -p itsd85 up -d --build"| COMPOSE["Docker Compose Project: itsd85"]
+        COMPOSE --> CONTAINER["itsd85-app Container\n(Host 8080 -> Container 3000)"]
+        CONTAINER --> HEALTH["Healthcheck Loop\n(15 attempts x 2s against /health)"]
+        HEALTH --> PRUNE["Safe Cleanup\n(docker image prune -f)"]
     end
 
-    Local -->|"git push (Pending Manual Approval)"| PUSH
+    Local -->|"git push origin main"| PUSH
 
     classDef active fill:#e1f5fe,stroke:#0288d1,stroke-width:2px;
-    classDef pending fill:#fff3e0,stroke:#f57c00,stroke-width:2px,stroke-dasharray: 5 5;
-    class DEV,LINT,TEST,DOCKER_BUILD,PUSH,GH_ACTIONS,CI_CHECKOUT,CI_SETUP,CI_INSTALL,CI_LINT,CI_TEST active;
-    class CD_JOB,PROD_SERVER,PROD_CONTAINER,HEALTHCHECK pending;
+    classDef runner fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
+    class DEV,LINT,TEST,DOCKER_BUILD,PUSH,GH_ACTIONS,CI_LINT,CI_TEST active;
+    class CD_JOB,COMPOSE,CONTAINER,HEALTH,PRUNE runner;
 ```
 
 > **Note on Exporting the Diagram:** The editable Mermaid diagram source is saved in [`docs/pipeline.mmd`](file:///c:/Users/Admin/itsd85-cicd-lab/docs/pipeline.mmd). If a PNG is needed, you can render it using the Mermaid CLI (`npx @mermaid-js/mermaid-cli -i docs/pipeline.mmd -o docs/pipeline.png`) or by opening it with the Mermaid Preview extension in VS Code.
