@@ -48,7 +48,7 @@ app.get('/api/add', (req, res) => {
     });
   }
 
-  const result = add(numA, numB);
+  const result = numA - numB;
   return res.status(200).json({ result });
 });
 
