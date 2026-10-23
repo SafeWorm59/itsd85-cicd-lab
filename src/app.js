@@ -11,7 +11,7 @@ export function add(a, b) {
 app.get('/', (req, res) => {
   res.status(200).json({
     title: 'itsd85-cicd-lab',
-    message: 'ROLLBACK TEST: intentional temporary defect',
+    message: 'Welcome to ITSD 85 CI/CD Lab API!',
     version: process.env.APP_VERSION || '1.0.0-local',
   });
 });
