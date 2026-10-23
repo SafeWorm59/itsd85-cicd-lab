@@ -39,7 +39,7 @@ The API operates over HTTP and returns all responses in JSON format.
   ```json
   {
     "title": "itsd85-cicd-lab",
-    "message": "ITSD 85 CI/CD Lab API",
+    "message": "Welcome to ITSD 85 CI/CD Lab API!",
     "version": "1.0.0-local"
   }
   ```
