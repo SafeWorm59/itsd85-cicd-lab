@@ -48,7 +48,7 @@ describe('Integration Tests: Express API', () => {
     assert.strictEqual(res.status, 200);
     const body = await res.json();
     assert.strictEqual(body.title, 'itsd85-cicd-lab');
-    assert.strictEqual(body.message, 'ROLLBACK TEST: intentional temporary defect');
+    assert.strictEqual(body.message, 'Welcome to ITSD 85 CI/CD Lab API!');
     assert.ok(body.version);
   });
 
